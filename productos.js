@@ -892,3 +892,270 @@ export async function obtenerCategorias(event, context) {
     return lambdaResponse(500, { error: "Error interno del servidor" });
   }
 }
+
+// Filtrar productos con múltiples criterios
+export async function filtrarProductos(event, context) {
+  try {
+    // Validar token
+    const tokenValidation = validarToken(event);
+    if (!tokenValidation.valid) {
+      return lambdaResponse(401, { error: tokenValidation.error });
+    }
+
+    const tenantId = tokenValidation.usuario.tenant_id;
+    const queryParams = event.queryStringParameters || {};
+
+    // Parámetros de filtrado
+    const categoria = queryParams.categoria;
+    const subcategoria = queryParams.subcategoria;
+    const laboratorio = queryParams.laboratorio;
+    const requiere_receta = queryParams.requiere_receta;
+    const precio_min = queryParams.precio_min
+      ? parseFloat(queryParams.precio_min)
+      : null;
+    const precio_max = queryParams.precio_max
+      ? parseFloat(queryParams.precio_max)
+      : null;
+    const search = queryParams.search; // Búsqueda por nombre o descripción
+
+    // Parámetros de paginación
+    const limit = parseInt(queryParams.limit) || 20;
+    let lastEvaluatedKey = null;
+
+    if (queryParams.lastKey) {
+      try {
+        lastEvaluatedKey = JSON.parse(
+          Buffer.from(queryParams.lastKey, "base64").toString()
+        );
+      } catch (e) {
+        return lambdaResponse(400, { error: "lastKey inválido" });
+      }
+    }
+
+    // Construir parámetros de consulta
+    const params = {
+      TableName: tableName,
+      KeyConditionExpression: "tenant_id = :tenant_id",
+      ExpressionAttributeValues: {
+        ":tenant_id": tenantId,
+      },
+      Limit: limit,
+      ScanIndexForward: false,
+    };
+
+    // Construir filtros
+    let filterExpressions = [];
+    let expressionAttributeNames = {};
+
+    if (categoria) {
+      filterExpressions.push("#categoria = :categoria");
+      expressionAttributeNames["#categoria"] = "categoria";
+      params.ExpressionAttributeValues[":categoria"] = categoria;
+    }
+
+    if (subcategoria) {
+      filterExpressions.push("subcategoria = :subcategoria");
+      params.ExpressionAttributeValues[":subcategoria"] = subcategoria;
+    }
+
+    if (laboratorio) {
+      filterExpressions.push("contains(laboratorio, :laboratorio)");
+      params.ExpressionAttributeValues[":laboratorio"] = laboratorio;
+    }
+
+    if (requiere_receta !== undefined) {
+      filterExpressions.push("requiere_receta = :requiere_receta");
+      params.ExpressionAttributeValues[":requiere_receta"] =
+        requiere_receta === "true";
+    }
+
+    if (precio_min !== null) {
+      filterExpressions.push("precio >= :precio_min");
+      params.ExpressionAttributeValues[":precio_min"] = precio_min;
+    }
+
+    if (precio_max !== null) {
+      filterExpressions.push("precio <= :precio_max");
+      params.ExpressionAttributeValues[":precio_max"] = precio_max;
+    }
+
+    if (search) {
+      filterExpressions.push(
+        "(contains(#nombre, :search) OR contains(descripcion, :search))"
+      );
+      expressionAttributeNames["#nombre"] = "nombre";
+      params.ExpressionAttributeValues[":search"] = search;
+    }
+
+    if (filterExpressions.length > 0) {
+      params.FilterExpression = filterExpressions.join(" AND ");
+    }
+
+    if (Object.keys(expressionAttributeNames).length > 0) {
+      params.ExpressionAttributeNames = expressionAttributeNames;
+    }
+
+    if (lastEvaluatedKey) {
+      params.ExclusiveStartKey = lastEvaluatedKey;
+    }
+
+    const result = await dynamodb.send(new QueryCommand(params));
+
+    let nextKey = null;
+    if (result.LastEvaluatedKey) {
+      nextKey = Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString(
+        "base64"
+      );
+    }
+
+    return lambdaResponse(200, {
+      productos: result.Items || [],
+      count: result.Items?.length || 0,
+      nextKey: nextKey,
+      filtros_aplicados: {
+        categoria,
+        subcategoria,
+        laboratorio,
+        requiere_receta,
+        precio_min,
+        precio_max,
+        search,
+      },
+    });
+  } catch (error) {
+    console.error("Error filtrando productos:", error);
+    return lambdaResponse(500, { error: "Error interno del servidor" });
+  }
+}
+
+// Obtener subcategorías de una categoría específica
+export async function obtenerSubcategorias(event, context) {
+  try {
+    // Validar token
+    const tokenValidation = validarToken(event);
+    if (!tokenValidation.valid) {
+      return lambdaResponse(401, { error: tokenValidation.error });
+    }
+
+    const categoria = event.pathParameters?.categoria;
+
+    if (!categoria) {
+      return lambdaResponse(400, { error: "Categoría requerida" });
+    }
+
+    if (!CATEGORIAS_DISPONIBLES[categoria]) {
+      return lambdaResponse(404, {
+        error: `Categoría '${categoria}' no encontrada`,
+        categorias_disponibles: Object.keys(CATEGORIAS_DISPONIBLES),
+      });
+    }
+
+    return lambdaResponse(200, {
+      categoria: categoria,
+      subcategorias: CATEGORIAS_DISPONIBLES[categoria],
+      total: CATEGORIAS_DISPONIBLES[categoria].length,
+    });
+  } catch (error) {
+    console.error("Error obteniendo subcategorías:", error);
+    return lambdaResponse(500, { error: "Error interno del servidor" });
+  }
+}
+
+// Obtener estadísticas para filtros del frontend
+export async function obtenerEstadisticas(event, context) {
+  try {
+    // Validar token
+    const tokenValidation = validarToken(event);
+    if (!tokenValidation.valid) {
+      return lambdaResponse(401, { error: tokenValidation.error });
+    }
+
+    const tenantId = tokenValidation.usuario.tenant_id;
+
+    // Obtener todos los productos para generar estadísticas
+    const params = {
+      TableName: tableName,
+      KeyConditionExpression: "tenant_id = :tenant_id",
+      ExpressionAttributeValues: {
+        ":tenant_id": tenantId,
+      },
+    };
+
+    const result = await dynamodb.send(new QueryCommand(params));
+    const productos = result.Items || [];
+
+    // Calcular estadísticas
+    const stats = {
+      total_productos: productos.length,
+      por_categoria: {},
+      por_subcategoria: {},
+      laboratorios: new Set(),
+      rango_precios: {
+        min: null,
+        max: null,
+        promedio: 0,
+      },
+      con_receta: 0,
+      sin_receta: 0,
+      stock_total: 0,
+    };
+
+    let suma_precios = 0;
+    let precios = [];
+
+    productos.forEach((producto) => {
+      // Estadísticas por categoría
+      if (producto.categoria) {
+        stats.por_categoria[producto.categoria] =
+          (stats.por_categoria[producto.categoria] || 0) + 1;
+      }
+
+      // Estadísticas por subcategoría
+      if (producto.subcategoria) {
+        stats.por_subcategoria[producto.subcategoria] =
+          (stats.por_subcategoria[producto.subcategoria] || 0) + 1;
+      }
+
+      // Laboratorios únicos
+      if (producto.laboratorio) {
+        stats.laboratorios.add(producto.laboratorio);
+      }
+
+      // Estadísticas de precios
+      if (producto.precio) {
+        precios.push(producto.precio);
+        suma_precios += producto.precio;
+      }
+
+      // Receta
+      if (producto.requiere_receta) {
+        stats.con_receta++;
+      } else {
+        stats.sin_receta++;
+      }
+
+      // Stock
+      if (producto.stock_disponible) {
+        stats.stock_total += producto.stock_disponible;
+      }
+    });
+
+    // Calcular estadísticas de precios
+    if (precios.length > 0) {
+      stats.rango_precios.min = Math.min(...precios);
+      stats.rango_precios.max = Math.max(...precios);
+      stats.rango_precios.promedio = suma_precios / precios.length;
+    }
+
+    // Convertir Set a Array
+    stats.laboratorios = Array.from(stats.laboratorios).sort();
+
+    // Categorías disponibles (todas las posibles, no solo las que tienen productos)
+    stats.categorias_disponibles = CATEGORIAS_DISPONIBLES;
+
+    return lambdaResponse(200, stats);
+  } catch (error) {
+    console.error("Error obteniendo estadísticas:", error);
+    return lambdaResponse(500, { error: "Error interno del servidor" });
+  }
+}
