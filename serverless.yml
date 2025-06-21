@@ -1,4 +1,4 @@
-org: rolandodiaz
+org: brandolc18
 service: api-productos
 
 plugins:
@@ -10,7 +10,7 @@ provider:
   memorySize: 1024
   timeout: 30
   iam:
-    role: arn:aws:iam::409362080365:role/LabRole
+    role: arn:aws:iam::248056481657:role/LabRole
   environment:
     TABLE_NAME: ${sls:stage}-t_productos
     JWT_SECRET: mi-super-secreto-jwt-2025
@@ -90,6 +90,37 @@ functions:
     events:
       - http:
           path: /productos/categorias
+          method: get
+          cors: true
+          integration: lambda
+
+  filtrar-productos:
+    handler: productos.filtrarProductos
+    events:
+      - http:
+          path: /productos/filtrar
+          method: get
+          cors: true
+          integration: lambda
+
+  obtener-subcategorias:
+    handler: productos.obtenerSubcategorias
+    events:
+      - http:
+          path: /productos/categorias/{categoria}/subcategorias
+          method: get
+          cors: true
+          integration: lambda
+          request:
+            parameters:
+              paths:
+                categoria: true
+
+  obtener-estadisticas:
+    handler: productos.obtenerEstadisticas
+    events:
+      - http:
+          path: /productos/estadisticas
           method: get
           cors: true
           integration: lambda
