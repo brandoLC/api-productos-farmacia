@@ -1037,17 +1037,82 @@ export async function obtenerSubcategorias(event, context) {
       return lambdaResponse(401, { error: tokenValidation.error });
     }
 
-    // Debug: log para ver qué está recibiendo
-    console.log("Event pathParameters:", JSON.stringify(event.pathParameters));
+    // Debug: log completo del evento
+    console.log("Event completo:", JSON.stringify(event, null, 2));
 
-    const categoria = event.pathParameters?.categoria;
+    // Múltiples formas de obtener la categoría
+    let categoria = null;
+
+    // Opción 1: Desde pathParameters (estándar)
+    if (event.pathParameters && event.pathParameters.categoria) {
+      categoria = event.pathParameters.categoria;
+    }
+
+    // Opción 2: Desde path si pathParameters no funciona
+    if (
+      !categoria &&
+      event.path &&
+      typeof event.path === "object" &&
+      event.path.categoria
+    ) {
+      categoria = event.path.categoria;
+    }
+
+    // Opción 3: Desde resource path parsing
+    if (!categoria && event.resource) {
+      const matches = event.resource.match(
+        /\/productos\/categorias\/([^\/]+)\/subcategorias/
+      );
+      if (matches && matches[1]) {
+        categoria = matches[1];
+      }
+    }
+
+    // Opción 4: Desde requestPath parsing
+    if (!categoria && event.requestPath) {
+      const matches = event.requestPath.match(
+        /\/productos\/categorias\/([^\/]+)\/subcategorias/
+      );
+      if (matches && matches[1]) {
+        categoria = matches[1];
+      }
+    }
+
+    // Opción 5: Desde requestContext path
+    if (!categoria && event.requestContext && event.requestContext.path) {
+      const matches = event.requestContext.path.match(
+        /\/productos\/categorias\/([^\/]+)\/subcategorias/
+      );
+      if (matches && matches[1]) {
+        categoria = matches[1];
+      }
+    }
+
+    // Opción 6: Desde requestContext resourcePath
+    if (
+      !categoria &&
+      event.requestContext &&
+      event.requestContext.resourcePath
+    ) {
+      const matches = event.requestContext.resourcePath.match(
+        /\/productos\/categorias\/([^\/]+)\/subcategorias/
+      );
+      if (matches && matches[1]) {
+        categoria = matches[1];
+      }
+    }
+
+    console.log("Categoria extraída:", categoria);
 
     if (!categoria) {
       return lambdaResponse(400, {
         error: "Categoría requerida",
         debug: {
           pathParameters: event.pathParameters,
-          rawPath: event.path || event.requestContext?.path,
+          path: event.path,
+          resource: event.resource,
+          requestPath: event.requestPath,
+          requestContext: event.requestContext,
         },
       });
     }
