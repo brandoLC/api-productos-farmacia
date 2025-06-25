@@ -1037,23 +1037,51 @@ export async function obtenerSubcategorias(event, context) {
       return lambdaResponse(401, { error: tokenValidation.error });
     }
 
+    // Debug: log para ver qué está recibiendo
+    console.log("Event pathParameters:", JSON.stringify(event.pathParameters));
+
     const categoria = event.pathParameters?.categoria;
 
     if (!categoria) {
-      return lambdaResponse(400, { error: "Categoría requerida" });
+      return lambdaResponse(400, {
+        error: "Categoría requerida",
+        debug: {
+          pathParameters: event.pathParameters,
+          rawPath: event.path || event.requestContext?.path,
+        },
+      });
     }
 
-    if (!CATEGORIAS_DISPONIBLES[categoria]) {
+    // Decodificar URL encoding si es necesario
+    const categoriaDecoded = decodeURIComponent(categoria);
+    console.log("Categoria original:", categoria);
+    console.log("Categoria decoded:", categoriaDecoded);
+
+    // Buscar la categoría (primero tal como viene, luego decodificada)
+    let categoriasDisponibles = CATEGORIAS_DISPONIBLES;
+    let categoriaEncontrada = null;
+    let categoriaKey = null;
+
+    if (categoriasDisponibles[categoria]) {
+      categoriaEncontrada = categoriasDisponibles[categoria];
+      categoriaKey = categoria;
+    } else if (categoriasDisponibles[categoriaDecoded]) {
+      categoriaEncontrada = categoriasDisponibles[categoriaDecoded];
+      categoriaKey = categoriaDecoded;
+    }
+
+    if (!categoriaEncontrada) {
       return lambdaResponse(404, {
         error: `Categoría '${categoria}' no encontrada`,
+        categoria_decoded: categoriaDecoded,
         categorias_disponibles: Object.keys(CATEGORIAS_DISPONIBLES),
       });
     }
 
     return lambdaResponse(200, {
-      categoria: categoria,
-      subcategorias: CATEGORIAS_DISPONIBLES[categoria],
-      total: CATEGORIAS_DISPONIBLES[categoria].length,
+      categoria: categoriaKey,
+      subcategorias: categoriaEncontrada,
+      total: categoriaEncontrada.length,
     });
   } catch (error) {
     console.error("Error obteniendo subcategorías:", error);
