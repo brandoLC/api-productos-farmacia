@@ -134,6 +134,32 @@ functions:
           cors: true
           integration: lambda
 
+  buscar-por-categoria:
+    handler: productos.buscarPorCategoria
+    events:
+      - http:
+          path: /productos/categoria/{categoria}
+          method: get
+          cors: true
+          integration: lambda
+          request:
+            parameters:
+              paths:
+                categoria: true
+
+  buscar-por-subcategoria:
+    handler: productos.buscarPorSubcategoria
+    events:
+      - http:
+          path: /productos/subcategoria/{subcategoria}
+          method: get
+          cors: true
+          integration: lambda
+          request:
+            parameters:
+              paths:
+                subcategoria: true
+
 resources:
   Resources:
     # Tabla DynamoDB
