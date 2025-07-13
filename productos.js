@@ -1314,16 +1314,10 @@ export async function obtenerEstadisticas(event, context) {
   }
 }
 
-// Búsqueda con paginación para ecommerce
+// Búsqueda simple y rápida con paginación - NUEVA VERSION SIMPLIFICADA
 export async function buscarProductos(event, context) {
   try {
-    // Debug completo del evento
-    console.log("=== DEBUG BUSCAR PRODUCTOS - EVENTO COMPLETO ===");
-    console.log("Event completo:", JSON.stringify(event, null, 2));
-    console.log("QueryStringParameters:", event.queryStringParameters);
-    console.log("Headers:", event.headers);
-    console.log("HttpMethod:", event.httpMethod);
-    console.log("Resource:", event.resource);
+    console.log("=== BÚSQUEDA SIMPLE DE PRODUCTOS ===");
 
     // Validar token
     const tokenValidation = validarToken(event);
@@ -1334,26 +1328,27 @@ export async function buscarProductos(event, context) {
     const tenantId = tokenValidation.usuario.tenant_id;
     const queryParams = event.queryStringParameters || {};
 
-    console.log("QueryParams extraídos:", queryParams);
-    console.log("Tipo de queryParams:", typeof queryParams);
-
-    const termino = queryParams.q || queryParams.search || queryParams.termino;
-    console.log("Término extraído:", termino);
-    const limite = parseInt(queryParams.limite || queryParams.limit) || 20; // Aumentado a 20 por defecto
-    const pagina = parseInt(queryParams.pagina || queryParams.page) || 1;
+    // Extraer parámetros de búsqueda
+    const termino =
+      queryParams.q || queryParams.search || queryParams.termino || "";
+    const limite = parseInt(queryParams.limite || queryParams.limit) || 10;
     const nextKeyParam = queryParams.nextKey;
-    const ordenarPor = queryParams.ordenar || "relevancia"; // relevancia, precio_asc, precio_desc, nombre
 
-    if (!termino || termino.trim().length < 2) {
+    console.log("Parámetros recibidos:");
+    console.log("- termino:", termino);
+    console.log("- limite:", limite);
+
+    if (!termino || termino.trim().length < 1) {
       return lambdaResponse(400, {
-        error: "Término de búsqueda requerido (mínimo 2 caracteres)",
-        ejemplo: "/productos/buscar?q=penicilina&limite=20&pagina=1",
+        error: "Término de búsqueda requerido",
+        ejemplo: "/productos/buscar?q=vitamina&limite=10",
       });
     }
 
     const terminoLimpio = termino.trim().toLowerCase();
+    console.log("Término limpio:", terminoLimpio);
 
-    // Calcular LastEvaluatedKey para paginación
+    // Manejo de paginación
     let lastEvaluatedKey = null;
     if (nextKeyParam) {
       try {
@@ -1365,12 +1360,12 @@ export async function buscarProductos(event, context) {
       }
     }
 
-    // Construir parámetros de consulta con paginación
+    // Parámetros de consulta DynamoDB - SOLO NOMBRE Y DESCRIPCIÓN
     const params = {
       TableName: tableName,
       KeyConditionExpression: "tenant_id = :tenant_id",
       FilterExpression:
-        "(contains(#nombre, :termino) OR contains(descripcion, :termino) OR contains(categoria, :termino) OR contains(subcategoria, :termino) OR contains(laboratorio, :termino)) AND activo = :activo",
+        "(contains(#nombre, :termino) OR contains(descripcion, :termino)) AND activo = :activo",
       ExpressionAttributeNames: {
         "#nombre": "nombre",
       },
@@ -1380,40 +1375,37 @@ export async function buscarProductos(event, context) {
         ":activo": true,
       },
       Limit: limite,
-      ScanIndexForward: ordenarPor === "precio_desc" ? false : true,
+      ScanIndexForward: false, // Más recientes primero
     };
 
     if (lastEvaluatedKey) {
       params.ExclusiveStartKey = lastEvaluatedKey;
     }
 
-    console.log("=== BÚSQUEDA CON PAGINACIÓN ===");
-    console.log("Término:", terminoLimpio);
-    console.log("Límite:", limite);
-    console.log("Página:", pagina);
-    console.log("Ordenar por:", ordenarPor);
-    console.log("LastEvaluatedKey:", lastEvaluatedKey);
-
+    console.log("Ejecutando consulta DynamoDB...");
     const result = await dynamodb.send(new QueryCommand(params));
     let productos = result.Items || [];
 
-    // Agregar campo de relevancia para cada producto
+    console.log(`Productos encontrados: ${productos.length}`);
+
+    // Calcular relevancia - PRIORIDAD AL NOMBRE
     productos = productos.map((producto) => {
       const nombreLower = producto.nombre.toLowerCase();
       const descripcionLower = producto.descripcion?.toLowerCase() || "";
-      const categoriaLower = producto.categoria?.toLowerCase() || "";
-      const subcategoriaLower = producto.subcategoria?.toLowerCase() || "";
-      const laboratorioLower = producto.laboratorio?.toLowerCase() || "";
-
       let relevancia = 0;
 
-      // Puntuación por coincidencias
-      if (nombreLower.includes(terminoLimpio)) relevancia += 10;
-      if (nombreLower.startsWith(terminoLimpio)) relevancia += 15; // Bonus por comenzar con el término
-      if (descripcionLower.includes(terminoLimpio)) relevancia += 5;
-      if (categoriaLower.includes(terminoLimpio)) relevancia += 3;
-      if (subcategoriaLower.includes(terminoLimpio)) relevancia += 3;
-      if (laboratorioLower.includes(terminoLimpio)) relevancia += 2;
+      // PUNTUACIÓN ALTA PARA NOMBRES
+      if (nombreLower.includes(terminoLimpio)) {
+        relevancia += 100; // Puntuación muy alta para nombres
+        if (nombreLower.startsWith(terminoLimpio)) {
+          relevancia += 50; // Bonus adicional si empieza con el término
+        }
+      }
+
+      // PUNTUACIÓN BAJA PARA DESCRIPCIONES
+      if (descripcionLower.includes(terminoLimpio)) {
+        relevancia += 10; // Puntuación menor para descripción
+      }
 
       return {
         ...producto,
@@ -1421,29 +1413,13 @@ export async function buscarProductos(event, context) {
       };
     });
 
-    // Ordenar según el criterio seleccionado
-    switch (ordenarPor) {
-      case "precio_asc":
-        productos.sort((a, b) => a.precio - b.precio);
-        break;
-      case "precio_desc":
-        productos.sort((a, b) => b.precio - a.precio);
-        break;
-      case "nombre":
-        productos.sort((a, b) => a.nombre.localeCompare(b.nombre));
-        break;
-      case "relevancia":
-      default:
-        productos.sort((a, b) => {
-          // Primero por relevancia (mayor a menor)
-          if (b.relevancia !== a.relevancia) {
-            return b.relevancia - a.relevancia;
-          }
-          // Si tienen la misma relevancia, por precio (menor a mayor)
-          return a.precio - b.precio;
-        });
-        break;
-    }
+    // Ordenar por relevancia (nombre tiene prioridad)
+    productos.sort((a, b) => {
+      if (b.relevancia !== a.relevancia) {
+        return b.relevancia - a.relevancia; // Mayor relevancia primero
+      }
+      return a.nombre.localeCompare(b.nombre); // Si tienen igual relevancia, orden alfabético
+    });
 
     // Calcular nextKey para paginación
     let nextKey = null;
@@ -1458,29 +1434,14 @@ export async function buscarProductos(event, context) {
       count: productos.length,
       termino_buscado: terminoLimpio,
       paginacion: {
-        pagina_actual: pagina,
         limite: limite,
         hay_mas: !!result.LastEvaluatedKey,
         nextKey: nextKey,
       },
-      ordenamiento: {
-        criterio: ordenarPor,
-        opciones: ["relevancia", "precio_asc", "precio_desc", "nombre"],
-      },
-      sugerencias:
+      mensaje:
         productos.length === 0
-          ? [
-              "Revisa la ortografía del término de búsqueda",
-              "Intenta con términos más generales",
-              "Busca por categoría como 'vitaminas', 'analgésicos', etc.",
-              "Prueba con el nombre del laboratorio",
-            ]
-          : null,
-      debug: {
-        dynamodb_scanned: result.ScannedCount,
-        dynamodb_count: result.Count,
-        filtros_aplicados: { termino: terminoLimpio, limite, ordenarPor },
-      },
+          ? `No se encontraron productos que contengan "${terminoLimpio}" en el nombre o descripción`
+          : `Se encontraron ${productos.length} productos`,
     });
   } catch (error) {
     console.error("Error en búsqueda:", error);
