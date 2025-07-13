@@ -1475,3 +1475,160 @@ export async function buscarProductos(event, context) {
     return lambdaResponse(500, { error: "Error interno del servidor" });
   }
 }
+
+// Buscar productos por categoría exacta
+export async function buscarPorCategoria(event, context) {
+  try {
+    // Validar token
+    const tokenValidation = validarToken(event);
+    if (!tokenValidation.valid) {
+      return lambdaResponse(401, { error: tokenValidation.error });
+    }
+
+    const tenantId = tokenValidation.usuario.tenant_id;
+    const queryParams = event.queryStringParameters || {};
+
+    // Obtener categoría del path
+    let categoria = null;
+    if (event.pathParameters && event.pathParameters.categoria) {
+      categoria = decodeURIComponent(event.pathParameters.categoria);
+    }
+
+    if (!categoria) {
+      return lambdaResponse(400, {
+        error: "Categoría requerida en el path",
+        ejemplo: "/productos/categoria/Analgésicos",
+      });
+    }
+
+    // Parámetros de paginación
+    const limite = parseInt(queryParams.limite || queryParams.limit) || 20;
+    const pagina = parseInt(queryParams.pagina || queryParams.page) || 1;
+
+    console.log("=== BUSCAR POR CATEGORÍA ===");
+    console.log("Categoría:", categoria);
+    console.log("Límite:", limite);
+    console.log("Página:", pagina);
+
+    // Construir parámetros de consulta
+    const params = {
+      TableName: tableName,
+      KeyConditionExpression: "tenant_id = :tenant_id",
+      FilterExpression: "#categoria = :categoria AND activo = :activo",
+      ExpressionAttributeNames: {
+        "#categoria": "categoria",
+      },
+      ExpressionAttributeValues: {
+        ":tenant_id": tenantId,
+        ":categoria": categoria,
+        ":activo": true,
+      },
+      Limit: limite,
+      ScanIndexForward: false,
+    };
+
+    const result = await dynamodb.send(new QueryCommand(params));
+    const productos = result.Items || [];
+
+    let nextKey = null;
+    if (result.LastEvaluatedKey) {
+      nextKey = Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString(
+        "base64"
+      );
+    }
+
+    console.log("Productos encontrados:", productos.length);
+
+    return lambdaResponse(200, {
+      productos: productos,
+      count: productos.length,
+      categoria_buscada: categoria,
+      paginacion: {
+        pagina_actual: pagina,
+        limite: limite,
+        hay_mas: !!result.LastEvaluatedKey,
+        nextKey: nextKey,
+      },
+    });
+  } catch (error) {
+    console.error("Error buscando por categoría:", error);
+    return lambdaResponse(500, { error: "Error interno del servidor" });
+  }
+}
+
+// Buscar productos por subcategoría exacta
+export async function buscarPorSubcategoria(event, context) {
+  try {
+    // Validar token
+    const tokenValidation = validarToken(event);
+    if (!tokenValidation.valid) {
+      return lambdaResponse(401, { error: tokenValidation.error });
+    }
+
+    const tenantId = tokenValidation.usuario.tenant_id;
+    const queryParams = event.queryStringParameters || {};
+
+    // Obtener subcategoría del path
+    let subcategoria = null;
+    if (event.pathParameters && event.pathParameters.subcategoria) {
+      subcategoria = decodeURIComponent(event.pathParameters.subcategoria);
+    }
+
+    if (!subcategoria) {
+      return lambdaResponse(400, {
+        error: "Subcategoría requerida en el path",
+        ejemplo: "/productos/subcategoria/Paracetamol",
+      });
+    }
+
+    // Parámetros de paginación
+    const limite = parseInt(queryParams.limite || queryParams.limit) || 20;
+    const pagina = parseInt(queryParams.pagina || queryParams.page) || 1;
+
+    console.log("=== BUSCAR POR SUBCATEGORÍA ===");
+    console.log("Subcategoría:", subcategoria);
+    console.log("Límite:", limite);
+    console.log("Página:", pagina);
+
+    // Construir parámetros de consulta
+    const params = {
+      TableName: tableName,
+      KeyConditionExpression: "tenant_id = :tenant_id",
+      FilterExpression: "subcategoria = :subcategoria AND activo = :activo",
+      ExpressionAttributeValues: {
+        ":tenant_id": tenantId,
+        ":subcategoria": subcategoria,
+        ":activo": true,
+      },
+      Limit: limite,
+      ScanIndexForward: false,
+    };
+
+    const result = await dynamodb.send(new QueryCommand(params));
+    const productos = result.Items || [];
+
+    let nextKey = null;
+    if (result.LastEvaluatedKey) {
+      nextKey = Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString(
+        "base64"
+      );
+    }
+
+    console.log("Productos encontrados:", productos.length);
+
+    return lambdaResponse(200, {
+      productos: productos,
+      count: productos.length,
+      subcategoria_buscada: subcategoria,
+      paginacion: {
+        pagina_actual: pagina,
+        limite: limite,
+        hay_mas: !!result.LastEvaluatedKey,
+        nextKey: nextKey,
+      },
+    });
+  } catch (error) {
+    console.error("Error buscando por subcategoría:", error);
+    return lambdaResponse(500, { error: "Error interno del servidor" });
+  }
+}
