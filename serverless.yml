@@ -124,7 +124,7 @@ functions:
     handler: productos.buscarProductos
     events:
       - http:
-          path: /productos/buscar
+          path: /productos/search
           method: get
           cors: true
 
