@@ -1317,6 +1317,14 @@ export async function obtenerEstadisticas(event, context) {
 // Búsqueda con paginación para ecommerce
 export async function buscarProductos(event, context) {
   try {
+    // Debug completo del evento
+    console.log("=== DEBUG BUSCAR PRODUCTOS - EVENTO COMPLETO ===");
+    console.log("Event completo:", JSON.stringify(event, null, 2));
+    console.log("QueryStringParameters:", event.queryStringParameters);
+    console.log("Headers:", event.headers);
+    console.log("HttpMethod:", event.httpMethod);
+    console.log("Resource:", event.resource);
+
     // Validar token
     const tokenValidation = validarToken(event);
     if (!tokenValidation.valid) {
@@ -1326,7 +1334,11 @@ export async function buscarProductos(event, context) {
     const tenantId = tokenValidation.usuario.tenant_id;
     const queryParams = event.queryStringParameters || {};
 
+    console.log("QueryParams extraídos:", queryParams);
+    console.log("Tipo de queryParams:", typeof queryParams);
+
     const termino = queryParams.q || queryParams.search || queryParams.termino;
+    console.log("Término extraído:", termino);
     const limite = parseInt(queryParams.limite || queryParams.limit) || 20; // Aumentado a 20 por defecto
     const pagina = parseInt(queryParams.pagina || queryParams.page) || 1;
     const nextKeyParam = queryParams.nextKey;
