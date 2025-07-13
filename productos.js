@@ -1743,8 +1743,13 @@ export async function buscarPorSubcategoria(event, context) {
 
     console.log("Productos encontrados:", productos.length);
     console.log("Subcategoría usada en filtro:", subcategoria);
+    console.log(
+      "Valor real de subcategoria antes de lambdaResponse:",
+      subcategoria
+    );
+    console.log("Tipo de subcategoria:", typeof subcategoria);
 
-    return lambdaResponse(200, {
+    const responseBody = {
       productos: productos,
       count: productos.length,
       subcategoria_buscada: subcategoria,
@@ -1759,7 +1764,12 @@ export async function buscarPorSubcategoria(event, context) {
         parametros_path: event.pathParameters,
         filtro_aplicado: `subcategoria = ${subcategoria}`,
       },
-    });
+    };
+
+    console.log("==== RESPUESTA FINAL ====");
+    console.log(JSON.stringify(responseBody, null, 2));
+
+    return lambdaResponse(200, responseBody);
   } catch (error) {
     console.error("Error buscando por subcategoría:", error);
     return lambdaResponse(500, { error: "Error interno del servidor" });
