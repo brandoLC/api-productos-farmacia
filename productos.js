@@ -1619,6 +1619,10 @@ export async function buscarPorSubcategoria(event, context) {
     console.log("=== DEBUG BUSCAR POR SUBCATEGORÍA ===");
     console.log("Event completo:", JSON.stringify(event, null, 2));
     console.log("PathParameters:", event.pathParameters);
+    console.log("RequestContext:", event.requestContext);
+    console.log("HttpMethod:", event.httpMethod);
+    console.log("Resource:", event.resource);
+    console.log("RequestPath:", event.requestPath);
 
     // Validar token
     const tokenValidation = validarToken(event);
@@ -1652,6 +1656,39 @@ export async function buscarPorSubcategoria(event, context) {
       const matches = event.requestPath.match(
         /\/productos\/subcategoria\/([^\/]+)/
       );
+      if (matches && matches[1]) {
+        subcategoria = decodeURIComponent(matches[1]);
+      }
+    }
+
+    // Opción 4: Desde requestContext path
+    if (!subcategoria && event.requestContext && event.requestContext.path) {
+      const matches = event.requestContext.path.match(
+        /\/productos\/subcategoria\/([^\/]+)/
+      );
+      if (matches && matches[1]) {
+        subcategoria = decodeURIComponent(matches[1]);
+      }
+    }
+
+    // Opción 5: Desde requestContext resourcePath
+    if (
+      !subcategoria &&
+      event.requestContext &&
+      event.requestContext.resourcePath
+    ) {
+      const matches = event.requestContext.resourcePath.match(
+        /\/productos\/subcategoria\/([^\/]+)/
+      );
+      if (matches && matches[1]) {
+        subcategoria = decodeURIComponent(matches[1]);
+      }
+    }
+
+    // Opción 6: Manual parsing del evento completo (backup extremo)
+    if (!subcategoria) {
+      const eventStr = JSON.stringify(event);
+      const matches = eventStr.match(/subcategoria[\/"]([^"\/\?&]+)/);
       if (matches && matches[1]) {
         subcategoria = decodeURIComponent(matches[1]);
       }
