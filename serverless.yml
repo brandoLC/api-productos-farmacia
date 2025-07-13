@@ -39,6 +39,11 @@ functions:
           method: get
           cors: true
           integration: lambda
+          request:
+            parameters:
+              querystrings:
+                limit: false
+                lastKey: false
 
   crear-producto:
     handler: productos.crearProducto
@@ -102,6 +107,18 @@ functions:
           method: get
           cors: true
           integration: lambda
+          request:
+            parameters:
+              querystrings:
+                categoria: false
+                subcategoria: false
+                laboratorio: false
+                requiere_receta: false
+                precio_min: false
+                precio_max: false
+                search: false
+                limit: false
+                lastKey: false
 
   buscar-productos:
     handler: productos.buscarProductos
@@ -110,7 +127,6 @@ functions:
           path: /productos/buscar
           method: get
           cors: true
-          integration: lambda
 
   obtener-subcategorias:
     handler: productos.obtenerSubcategorias
@@ -146,6 +162,11 @@ functions:
             parameters:
               paths:
                 categoria: true
+              querystrings:
+                limite: false
+                limit: false
+                pagina: false
+                page: false
 
   buscar-por-subcategoria:
     handler: productos.buscarPorSubcategoria
@@ -159,6 +180,11 @@ functions:
             parameters:
               paths:
                 subcategoria: true
+              querystrings:
+                limite: false
+                limit: false
+                pagina: false
+                page: false
 
 resources:
   Resources:
