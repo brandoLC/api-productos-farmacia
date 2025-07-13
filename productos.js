@@ -1314,11 +1314,10 @@ export async function obtenerEstadisticas(event, context) {
   }
 }
 
-// Búsqueda simple y rápida con paginación - NUEVA VERSION SIMPLIFICADA
+// Búsqueda de productos - SOLO en nombre y descripción
+// Búsqueda de productos por nombre y descripción únicamente
 export async function buscarProductos(event, context) {
   try {
-    console.log("=== BÚSQUEDA SIMPLE DE PRODUCTOS ===");
-
     // Validar token
     const tokenValidation = validarToken(event);
     if (!tokenValidation.valid) {
@@ -1328,100 +1327,90 @@ export async function buscarProductos(event, context) {
     const tenantId = tokenValidation.usuario.tenant_id;
     const queryParams = event.queryStringParameters || {};
 
-    // Extraer parámetros de búsqueda
-    const termino =
-      queryParams.q || queryParams.search || queryParams.termino || "";
-    const limite = parseInt(queryParams.limite || queryParams.limit) || 10;
-    const nextKeyParam = queryParams.nextKey;
+    // Obtener término de búsqueda
+    const q = queryParams.q || "";
+    const limit = parseInt(queryParams.limit) || 10;
 
-    console.log("Parámetros recibidos:");
-    console.log("- termino:", termino);
-    console.log("- limite:", limite);
-
-    if (!termino || termino.trim().length < 1) {
+    if (!q || q.trim().length === 0) {
       return lambdaResponse(400, {
-        error: "Término de búsqueda requerido",
-        ejemplo: "/productos/buscar?q=vitamina&limite=10",
+        error: "Parámetro 'q' requerido para la búsqueda",
+        ejemplo: "/productos/buscar?q=vitamina&limit=10",
       });
     }
 
-    const terminoLimpio = termino.trim().toLowerCase();
-    console.log("Término limpio:", terminoLimpio);
+    const searchTerm = q.trim().toLowerCase();
 
-    // Manejo de paginación
+    // Paginación
     let lastEvaluatedKey = null;
-    if (nextKeyParam) {
+    if (queryParams.nextKey) {
       try {
         lastEvaluatedKey = JSON.parse(
-          Buffer.from(nextKeyParam, "base64").toString()
+          Buffer.from(queryParams.nextKey, "base64").toString()
         );
       } catch (error) {
         console.log("Error decodificando nextKey:", error);
       }
     }
 
-    // Parámetros de consulta DynamoDB - SOLO NOMBRE Y DESCRIPCIÓN
+    // Consulta DynamoDB - SOLO busca en nombre y descripción
     const params = {
       TableName: tableName,
       KeyConditionExpression: "tenant_id = :tenant_id",
       FilterExpression:
-        "(contains(#nombre, :termino) OR contains(descripcion, :termino)) AND activo = :activo",
+        "(contains(#nombre, :search) OR contains(descripcion, :search)) AND activo = :activo",
       ExpressionAttributeNames: {
         "#nombre": "nombre",
       },
       ExpressionAttributeValues: {
         ":tenant_id": tenantId,
-        ":termino": terminoLimpio,
+        ":search": searchTerm,
         ":activo": true,
       },
-      Limit: limite,
-      ScanIndexForward: false, // Más recientes primero
+      Limit: limit,
+      ScanIndexForward: false,
     };
 
     if (lastEvaluatedKey) {
       params.ExclusiveStartKey = lastEvaluatedKey;
     }
 
-    console.log("Ejecutando consulta DynamoDB...");
     const result = await dynamodb.send(new QueryCommand(params));
     let productos = result.Items || [];
 
-    console.log(`Productos encontrados: ${productos.length}`);
-
-    // Calcular relevancia - PRIORIDAD AL NOMBRE
+    // Calcular relevancia: priorizar coincidencias en nombre
     productos = productos.map((producto) => {
-      const nombreLower = producto.nombre.toLowerCase();
-      const descripcionLower = producto.descripcion?.toLowerCase() || "";
-      let relevancia = 0;
+      const nombre = producto.nombre.toLowerCase();
+      const descripcion = (producto.descripcion || "").toLowerCase();
+      let score = 0;
 
-      // PUNTUACIÓN ALTA PARA NOMBRES
-      if (nombreLower.includes(terminoLimpio)) {
-        relevancia += 100; // Puntuación muy alta para nombres
-        if (nombreLower.startsWith(terminoLimpio)) {
-          relevancia += 50; // Bonus adicional si empieza con el término
+      // Puntuación por nombre (máxima prioridad)
+      if (nombre.includes(searchTerm)) {
+        score += 100;
+        if (nombre.startsWith(searchTerm)) {
+          score += 50; // Bonus si empieza con el término
         }
       }
 
-      // PUNTUACIÓN BAJA PARA DESCRIPCIONES
-      if (descripcionLower.includes(terminoLimpio)) {
-        relevancia += 10; // Puntuación menor para descripción
+      // Puntuación por descripción (menor prioridad)
+      if (descripcion.includes(searchTerm)) {
+        score += 20;
       }
 
-      return {
-        ...producto,
-        relevancia: relevancia,
-      };
+      return { ...producto, _score: score };
     });
 
-    // Ordenar por relevancia (nombre tiene prioridad)
+    // Ordenar por relevancia
     productos.sort((a, b) => {
-      if (b.relevancia !== a.relevancia) {
-        return b.relevancia - a.relevancia; // Mayor relevancia primero
+      if (b._score !== a._score) {
+        return b._score - a._score;
       }
-      return a.nombre.localeCompare(b.nombre); // Si tienen igual relevancia, orden alfabético
+      return a.nombre.localeCompare(b.nombre);
     });
 
-    // Calcular nextKey para paginación
+    // Limpiar campo temporal de score
+    productos = productos.map(({ _score, ...producto }) => producto);
+
+    // Preparar nextKey para paginación
     let nextKey = null;
     if (result.LastEvaluatedKey) {
       nextKey = Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString(
@@ -1430,21 +1419,17 @@ export async function buscarProductos(event, context) {
     }
 
     return lambdaResponse(200, {
-      productos: productos,
+      productos,
       count: productos.length,
-      termino_buscado: terminoLimpio,
-      paginacion: {
-        limite: limite,
-        hay_mas: !!result.LastEvaluatedKey,
-        nextKey: nextKey,
+      searchTerm,
+      pagination: {
+        limit,
+        hasMore: !!result.LastEvaluatedKey,
+        nextKey,
       },
-      mensaje:
-        productos.length === 0
-          ? `No se encontraron productos que contengan "${terminoLimpio}" en el nombre o descripción`
-          : `Se encontraron ${productos.length} productos`,
     });
   } catch (error) {
-    console.error("Error en búsqueda:", error);
+    console.error("Error en búsqueda de productos:", error);
     return lambdaResponse(500, { error: "Error interno del servidor" });
   }
 }
