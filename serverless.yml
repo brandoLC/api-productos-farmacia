@@ -10,7 +10,7 @@ provider:
   memorySize: 1024
   timeout: 30
   iam:
-    role: arn:aws:iam::248056481657:role/LabRole
+    role: arn:aws:iam::604470939107:role/LabRole
   environment:
     TABLE_NAME: ${sls:stage}-t_productos
     JWT_SECRET: mi-super-secreto-jwt-2025
@@ -99,6 +99,15 @@ functions:
     events:
       - http:
           path: /productos/filtrar
+          method: get
+          cors: true
+          integration: lambda
+
+  buscar-productos:
+    handler: productos.buscarProductos
+    events:
+      - http:
+          path: /productos/buscar
           method: get
           cors: true
           integration: lambda
