@@ -999,7 +999,27 @@ export async function filtrarProductos(event, context) {
       params.ExclusiveStartKey = lastEvaluatedKey;
     }
 
+    // Debug: log de parámetros de consulta
+    console.log("=== FILTRAR PRODUCTOS DEBUG ===");
+    console.log("Query params recibidos:", queryParams);
+    console.log("Filtros extraídos:", {
+      categoria,
+      subcategoria,
+      laboratorio,
+      requiere_receta,
+      precio_min,
+      precio_max,
+      search,
+    });
+    console.log("Parámetros DynamoDB:", JSON.stringify(params, null, 2));
+
     const result = await dynamodb.send(new QueryCommand(params));
+
+    // Debug: log de resultados
+    console.log("Resultados DynamoDB:");
+    console.log("- Total items:", result.Items?.length || 0);
+    console.log("- Scanned count:", result.ScannedCount);
+    console.log("- Count:", result.Count);
 
     let nextKey = null;
     if (result.LastEvaluatedKey) {
@@ -1008,10 +1028,14 @@ export async function filtrarProductos(event, context) {
       );
     }
 
+    // Si hay filtros aplicados pero no hay resultados, asegurar que devolvemos array vacío
+    const productos = result.Items || [];
+
     return lambdaResponse(200, {
-      productos: result.Items || [],
-      count: result.Items?.length || 0,
+      productos: productos,
+      count: productos.length,
       nextKey: nextKey,
+      hasMore: !!result.LastEvaluatedKey,
       filtros_aplicados: {
         categoria,
         subcategoria,
@@ -1020,6 +1044,12 @@ export async function filtrarProductos(event, context) {
         precio_min,
         precio_max,
         search,
+      },
+      debug: {
+        dynamodb_scanned: result.ScannedCount,
+        dynamodb_count: result.Count,
+        filters_applied: filterExpressions.length > 0,
+        filter_expression: params.FilterExpression || "none",
       },
     });
   } catch (error) {
@@ -1249,6 +1279,91 @@ export async function obtenerEstadisticas(event, context) {
     return lambdaResponse(200, stats);
   } catch (error) {
     console.error("Error obteniendo estadísticas:", error);
+    return lambdaResponse(500, { error: "Error interno del servidor" });
+  }
+}
+
+// Búsqueda simple para barra de búsqueda del ecommerce
+export async function buscarProductos(event, context) {
+  try {
+    // Validar token
+    const tokenValidation = validarToken(event);
+    if (!tokenValidation.valid) {
+      return lambdaResponse(401, { error: tokenValidation.error });
+    }
+
+    const tenantId = tokenValidation.usuario.tenant_id;
+    const queryParams = event.queryStringParameters || {};
+
+    const termino = queryParams.q || queryParams.search || queryParams.termino;
+    const limit = parseInt(queryParams.limit) || 10; // Menos resultados para búsqueda rápida
+
+    if (!termino || termino.trim().length < 2) {
+      return lambdaResponse(400, {
+        error: "Término de búsqueda requerido (mínimo 2 caracteres)",
+        ejemplo: "/productos/buscar?q=penicilina",
+      });
+    }
+
+    const terminoLimpio = termino.trim().toLowerCase();
+
+    // Construir parámetros de consulta optimizada para búsqueda
+    const params = {
+      TableName: tableName,
+      KeyConditionExpression: "tenant_id = :tenant_id",
+      FilterExpression:
+        "(contains(#nombre, :termino) OR contains(descripcion, :termino) OR contains(categoria, :termino) OR contains(subcategoria, :termino) OR contains(laboratorio, :termino)) AND activo = :activo",
+      ExpressionAttributeNames: {
+        "#nombre": "nombre",
+      },
+      ExpressionAttributeValues: {
+        ":tenant_id": tenantId,
+        ":termino": terminoLimpio,
+        ":activo": true,
+      },
+      Limit: limit,
+      ScanIndexForward: false, // Más recientes primero
+    };
+
+    console.log("=== BÚSQUEDA SIMPLE ===");
+    console.log("Término:", terminoLimpio);
+    console.log("Parámetros:", JSON.stringify(params, null, 2));
+
+    const result = await dynamodb.send(new QueryCommand(params));
+    const productos = result.Items || [];
+
+    // Ordenar por relevancia (coincidencias en nombre primero)
+    const productosOrdenados = productos.sort((a, b) => {
+      const nombreA = a.nombre.toLowerCase();
+      const nombreB = b.nombre.toLowerCase();
+
+      // Priorizar coincidencias exactas en el nombre
+      const exactMatchA = nombreA.includes(terminoLimpio) ? 1 : 0;
+      const exactMatchB = nombreB.includes(terminoLimpio) ? 1 : 0;
+
+      if (exactMatchA !== exactMatchB) {
+        return exactMatchB - exactMatchA; // Exact matches first
+      }
+
+      // Luego por precio (más baratos primero)
+      return a.precio - b.precio;
+    });
+
+    return lambdaResponse(200, {
+      productos: productosOrdenados,
+      count: productosOrdenados.length,
+      termino_buscado: terminoLimpio,
+      sugerencias:
+        productosOrdenados.length === 0
+          ? [
+              "Revisa la ortografía",
+              "Intenta con términos más generales",
+              "Busca por categoría como 'vitaminas', 'analgésicos', etc.",
+            ]
+          : null,
+    });
+  } catch (error) {
+    console.error("Error en búsqueda:", error);
     return lambdaResponse(500, { error: "Error interno del servidor" });
   }
 }
