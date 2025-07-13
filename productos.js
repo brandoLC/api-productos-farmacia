@@ -905,6 +905,10 @@ export async function filtrarProductos(event, context) {
     const tenantId = tokenValidation.usuario.tenant_id;
     const queryParams = event.queryStringParameters || {};
 
+    // Debug: log de queryParams recibidos
+    console.log("=== FILTRAR PRODUCTOS DEBUG - INICIO ===");
+    console.log("Query params RAW:", JSON.stringify(queryParams, null, 2));
+
     // Parámetros de filtrado
     const categoria = queryParams.categoria;
     const subcategoria = queryParams.subcategoria;
@@ -917,6 +921,15 @@ export async function filtrarProductos(event, context) {
       ? parseFloat(queryParams.precio_max)
       : null;
     const search = queryParams.search; // Búsqueda por nombre o descripción
+
+    console.log("Parámetros extraídos:");
+    console.log("- categoria:", categoria);
+    console.log("- subcategoria:", subcategoria);
+    console.log("- laboratorio:", laboratorio);
+    console.log("- requiere_receta:", requiere_receta);
+    console.log("- precio_min:", precio_min);
+    console.log("- precio_max:", precio_max);
+    console.log("- search:", search);
 
     // Parámetros de paginación
     const limit = parseInt(queryParams.limit) || 20;
@@ -951,32 +964,38 @@ export async function filtrarProductos(event, context) {
       filterExpressions.push("#categoria = :categoria");
       expressionAttributeNames["#categoria"] = "categoria";
       params.ExpressionAttributeValues[":categoria"] = categoria;
+      console.log("✅ Filtro de categoría agregado:", categoria);
     }
 
     if (subcategoria) {
       filterExpressions.push("subcategoria = :subcategoria");
       params.ExpressionAttributeValues[":subcategoria"] = subcategoria;
+      console.log("✅ Filtro de subcategoría agregado:", subcategoria);
     }
 
     if (laboratorio) {
       filterExpressions.push("contains(laboratorio, :laboratorio)");
       params.ExpressionAttributeValues[":laboratorio"] = laboratorio;
+      console.log("✅ Filtro de laboratorio agregado:", laboratorio);
     }
 
     if (requiere_receta !== undefined) {
       filterExpressions.push("requiere_receta = :requiere_receta");
       params.ExpressionAttributeValues[":requiere_receta"] =
         requiere_receta === "true";
+      console.log("✅ Filtro de receta agregado:", requiere_receta === "true");
     }
 
     if (precio_min !== null) {
       filterExpressions.push("precio >= :precio_min");
       params.ExpressionAttributeValues[":precio_min"] = precio_min;
+      console.log("✅ Filtro de precio mínimo agregado:", precio_min);
     }
 
     if (precio_max !== null) {
       filterExpressions.push("precio <= :precio_max");
       params.ExpressionAttributeValues[":precio_max"] = precio_max;
+      console.log("✅ Filtro de precio máximo agregado:", precio_max);
     }
 
     if (search) {
@@ -985,6 +1004,7 @@ export async function filtrarProductos(event, context) {
       );
       expressionAttributeNames["#nombre"] = "nombre";
       params.ExpressionAttributeValues[":search"] = search;
+      console.log("✅ Filtro de búsqueda agregado:", search);
     }
 
     if (filterExpressions.length > 0) {
@@ -999,19 +1019,19 @@ export async function filtrarProductos(event, context) {
       params.ExclusiveStartKey = lastEvaluatedKey;
     }
 
-    // Debug: log de parámetros de consulta
-    console.log("=== FILTRAR PRODUCTOS DEBUG ===");
-    console.log("Query params recibidos:", queryParams);
-    console.log("Filtros extraídos:", {
-      categoria,
-      subcategoria,
-      laboratorio,
-      requiere_receta,
-      precio_min,
-      precio_max,
-      search,
-    });
-    console.log("Parámetros DynamoDB:", JSON.stringify(params, null, 2));
+    // Debug: log de parámetros finales
+    console.log("=== PARÁMETROS FINALES DYNAMODB ===");
+    console.log("FilterExpressions count:", filterExpressions.length);
+    console.log("FilterExpression final:", params.FilterExpression);
+    console.log(
+      "ExpressionAttributeValues:",
+      JSON.stringify(params.ExpressionAttributeValues, null, 2)
+    );
+    console.log(
+      "ExpressionAttributeNames:",
+      JSON.stringify(params.ExpressionAttributeNames, null, 2)
+    );
+    console.log("Parámetros completos:", JSON.stringify(params, null, 2));
 
     const result = await dynamodb.send(new QueryCommand(params));
 
@@ -1046,10 +1066,21 @@ export async function filtrarProductos(event, context) {
         search,
       },
       debug: {
+        query_params_recibidos: queryParams,
+        filtros_detectados: {
+          categoria: !!categoria,
+          subcategoria: !!subcategoria,
+          laboratorio: !!laboratorio,
+          requiere_receta: requiere_receta !== undefined,
+          precio_min: precio_min !== null,
+          precio_max: precio_max !== null,
+          search: !!search,
+        },
         dynamodb_scanned: result.ScannedCount,
         dynamodb_count: result.Count,
         filters_applied: filterExpressions.length > 0,
         filter_expression: params.FilterExpression || "none",
+        total_filter_expressions: filterExpressions.length,
       },
     });
   } catch (error) {
