@@ -1705,6 +1705,7 @@ export async function buscarPorSubcategoria(event, context) {
     }
 
     console.log("Productos encontrados:", productos.length);
+    console.log("Subcategoría usada en filtro:", subcategoria);
 
     return lambdaResponse(200, {
       productos: productos,
@@ -1715,6 +1716,11 @@ export async function buscarPorSubcategoria(event, context) {
         limite: limite,
         hay_mas: !!result.LastEvaluatedKey,
         nextKey: nextKey,
+      },
+      debug: {
+        subcategoria_extraida: subcategoria,
+        parametros_path: event.pathParameters,
+        filtro_aplicado: `:subcategoria = ${subcategoria}`,
       },
     });
   } catch (error) {
