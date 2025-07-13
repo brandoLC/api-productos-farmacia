@@ -1318,6 +1318,9 @@ export async function obtenerEstadisticas(event, context) {
 // Búsqueda de productos por nombre y descripción únicamente
 export async function buscarProductos(event, context) {
   try {
+    console.log("=== BUSCAR PRODUCTOS DEBUG ===");
+    console.log("Event completo:", JSON.stringify(event, null, 2));
+
     // Validar token
     const tokenValidation = validarToken(event);
     if (!tokenValidation.valid) {
@@ -1327,14 +1330,28 @@ export async function buscarProductos(event, context) {
     const tenantId = tokenValidation.usuario.tenant_id;
     const queryParams = event.queryStringParameters || {};
 
+    console.log(
+      "Query params recibidos:",
+      JSON.stringify(queryParams, null, 2)
+    );
+
     // Obtener término de búsqueda
     const q = queryParams.q || "";
     const limit = parseInt(queryParams.limit) || 10;
 
+    console.log("Parámetro q extraído:", q);
+    console.log("Límite:", limit);
+
     if (!q || q.trim().length === 0) {
+      console.log("ERROR: Parámetro q vacío o nulo");
       return lambdaResponse(400, {
         error: "Parámetro 'q' requerido para la búsqueda",
         ejemplo: "/productos/buscar?q=vitamina&limit=10",
+        debug: {
+          queryParams_recibidos: queryParams,
+          q_extraido: q,
+          q_length: q ? q.length : "null",
+        },
       });
     }
 
