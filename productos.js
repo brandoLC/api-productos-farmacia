@@ -1612,19 +1612,16 @@ export async function buscarPorCategoria(event, context) {
   }
 }
 
-// Buscar productos por subcategoría exacta
+// Buscar productos por subcategoría exacta - VERSIÓN REFACTORIZADA
 export async function buscarPorSubcategoria(event, context) {
   try {
     // Debug: ver qué llega en el evento
     console.log("=== DEBUG BUSCAR POR SUBCATEGORÍA ===");
     console.log("Event completo:", JSON.stringify(event, null, 2));
     console.log("PathParameters:", event.pathParameters);
-    console.log("RequestContext:", event.requestContext);
-    console.log("HttpMethod:", event.httpMethod);
+    console.log("Path:", event.path);
     console.log("Resource:", event.resource);
     console.log("RequestPath:", event.requestPath);
-    console.log("Body:", event.body);
-    console.log("Body type:", typeof event.body);
 
     // Validar token
     const tokenValidation = validarToken(event);
@@ -1635,10 +1632,10 @@ export async function buscarPorSubcategoria(event, context) {
     const tenantId = tokenValidation.usuario.tenant_id;
     const queryParams = event.queryStringParameters || {};
 
-    // Múltiples formas de obtener la subcategoría
+    // Múltiples formas de obtener la subcategoría (usando misma lógica que categoría)
     let subcategoria = null;
 
-    // NUEVA OPCIÓN: Desde el body (para POST con JSON explícito)
+    // PRIORIDAD 1: Desde el body (para casos con JSON raw)
     if (event.body) {
       try {
         let body;
@@ -1650,84 +1647,92 @@ export async function buscarPorSubcategoria(event, context) {
 
         if (body && body.subcategoria) {
           subcategoria = body.subcategoria.trim();
-          console.log("Subcategoría extraída desde BODY:", subcategoria);
+          console.log("✅ Subcategoría extraída desde BODY:", subcategoria);
         }
       } catch (error) {
         console.log(
-          "Error parseando body JSON, continuando con path params:",
+          "⚠️ Error parseando body JSON, continuando con path params:",
           error.message
         );
       }
     }
 
-    // Opción 1: Desde pathParameters (estándar)
-    if (event.pathParameters && event.pathParameters.subcategoria) {
+    // PRIORIDAD 2: Desde pathParameters (estándar de API Gateway)
+    if (
+      !subcategoria &&
+      event.pathParameters &&
+      event.pathParameters.subcategoria
+    ) {
       subcategoria = decodeURIComponent(event.pathParameters.subcategoria);
+      console.log(
+        "✅ Subcategoría extraída desde pathParameters:",
+        subcategoria
+      );
     }
 
-    // Opción 2: Desde resource path parsing
+    // PRIORIDAD 3: Desde path si pathParameters no funciona
+    if (
+      !subcategoria &&
+      event.path &&
+      typeof event.path === "object" &&
+      event.path.subcategoria
+    ) {
+      subcategoria = decodeURIComponent(event.path.subcategoria);
+      console.log("✅ Subcategoría extraída desde path object:", subcategoria);
+    }
+
+    // PRIORIDAD 4: Desde resource path parsing
     if (!subcategoria && event.resource) {
       const matches = event.resource.match(
         /\/productos\/subcategoria\/([^\/]+)/
       );
       if (matches && matches[1]) {
         subcategoria = decodeURIComponent(matches[1]);
+        console.log("✅ Subcategoría extraída desde resource:", subcategoria);
       }
     }
 
-    // Opción 3: Desde requestPath parsing
+    // PRIORIDAD 5: Desde requestPath parsing
     if (!subcategoria && event.requestPath) {
       const matches = event.requestPath.match(
         /\/productos\/subcategoria\/([^\/]+)/
       );
       if (matches && matches[1]) {
         subcategoria = decodeURIComponent(matches[1]);
+        console.log(
+          "✅ Subcategoría extraída desde requestPath:",
+          subcategoria
+        );
       }
     }
 
-    // Opción 4: Desde requestContext path
+    // PRIORIDAD 6: Desde requestContext path
     if (!subcategoria && event.requestContext && event.requestContext.path) {
       const matches = event.requestContext.path.match(
         /\/productos\/subcategoria\/([^\/]+)/
       );
       if (matches && matches[1]) {
         subcategoria = decodeURIComponent(matches[1]);
+        console.log(
+          "✅ Subcategoría extraída desde requestContext.path:",
+          subcategoria
+        );
       }
     }
 
-    // Opción 5: Desde requestContext resourcePath
-    if (
-      !subcategoria &&
-      event.requestContext &&
-      event.requestContext.resourcePath
-    ) {
-      const matches = event.requestContext.resourcePath.match(
-        /\/productos\/subcategoria\/([^\/]+)/
-      );
-      if (matches && matches[1]) {
-        subcategoria = decodeURIComponent(matches[1]);
-      }
-    }
-
-    // Opción 6: Manual parsing del evento completo (backup extremo)
-    if (!subcategoria) {
-      const eventStr = JSON.stringify(event);
-      const matches = eventStr.match(/subcategoria[\/"]([^"\/\?&]+)/);
-      if (matches && matches[1]) {
-        subcategoria = decodeURIComponent(matches[1]);
-      }
-    }
-
-    console.log("Subcategoría extraída:", subcategoria);
+    console.log("🔍 Subcategoría final extraída:", subcategoria);
 
     if (!subcategoria) {
       return lambdaResponse(400, {
-        error: "Subcategoría requerida en el path",
-        ejemplo: "/productos/subcategoria/Paracetamol",
+        error: "Subcategoría requerida en el path o body",
+        ejemplo_path: "/productos/subcategoria/Leches%20de%20Fórmula",
+        ejemplo_body: '{"subcategoria": "Leches de Fórmula"}',
         debug: {
           pathParameters: event.pathParameters,
+          path: event.path,
           resource: event.resource,
           requestPath: event.requestPath,
+          body_parseado: event.body ? "presente" : "ausente",
         },
       });
     }
@@ -1741,7 +1746,7 @@ export async function buscarPorSubcategoria(event, context) {
     console.log("Límite:", limite);
     console.log("Página:", pagina);
 
-    // Construir parámetros de consulta
+    // Construir parámetros de consulta (misma estructura que categoría)
     const params = {
       TableName: tableName,
       KeyConditionExpression: "tenant_id = :tenant_id",
@@ -1755,6 +1760,8 @@ export async function buscarPorSubcategoria(event, context) {
       ScanIndexForward: false,
     };
 
+    console.log("📋 Parámetros DynamoDB:", JSON.stringify(params, null, 2));
+
     const result = await dynamodb.send(new QueryCommand(params));
     const productos = result.Items || [];
 
@@ -1765,13 +1772,9 @@ export async function buscarPorSubcategoria(event, context) {
       );
     }
 
-    console.log("Productos encontrados:", productos.length);
-    console.log("Subcategoría usada en filtro:", subcategoria);
-    console.log(
-      "Valor real de subcategoria antes de lambdaResponse:",
-      subcategoria
-    );
-    console.log("Tipo de subcategoria:", typeof subcategoria);
+    console.log("📊 Productos encontrados:", productos.length);
+    console.log("📊 DynamoDB Count:", result.Count);
+    console.log("📊 DynamoDB ScannedCount:", result.ScannedCount);
 
     return lambdaResponse(200, {
       productos: productos,
@@ -1787,10 +1790,18 @@ export async function buscarPorSubcategoria(event, context) {
         subcategoria_extraida: subcategoria,
         parametros_path: event.pathParameters,
         filtro_aplicado: `subcategoria = ${subcategoria}`,
+        dynamodb_count: result.Count,
+        dynamodb_scanned: result.ScannedCount,
       },
     });
   } catch (error) {
-    console.error("Error buscando por subcategoría:", error);
-    return lambdaResponse(500, { error: "Error interno del servidor" });
+    console.error("❌ Error buscando por subcategoría:", error);
+    return lambdaResponse(500, {
+      error: "Error interno del servidor",
+      debug: {
+        error_message: error.message,
+        error_stack: error.stack,
+      },
+    });
   }
 }
