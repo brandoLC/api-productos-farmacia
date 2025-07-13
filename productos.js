@@ -1370,20 +1370,16 @@ export async function buscarProductos(event, context) {
     }
 
     // Consulta DynamoDB - SOLO busca en nombre y descripción
+    // Usamos una estrategia diferente para búsqueda case-insensitive
     const params = {
       TableName: tableName,
       KeyConditionExpression: "tenant_id = :tenant_id",
-      FilterExpression:
-        "(contains(#nombre, :search) OR contains(descripcion, :search)) AND activo = :activo",
-      ExpressionAttributeNames: {
-        "#nombre": "nombre",
-      },
+      FilterExpression: "activo = :activo",
       ExpressionAttributeValues: {
         ":tenant_id": tenantId,
-        ":search": searchTerm,
         ":activo": true,
       },
-      Limit: limit,
+      Limit: 50, // Aumentamos el límite para filtrar después
       ScanIndexForward: false,
     };
 
@@ -1394,22 +1390,41 @@ export async function buscarProductos(event, context) {
     const result = await dynamodb.send(new QueryCommand(params));
     let productos = result.Items || [];
 
+    console.log(`Total productos obtenidos de DynamoDB: ${productos.length}`);
+
+    // Filtrar productos manualmente de forma case-insensitive
+    productos = productos.filter((producto) => {
+      const nombre = (producto.nombre || "").toLowerCase();
+      const descripcion = (producto.descripcion || "").toLowerCase();
+      const searchLower = searchTerm.toLowerCase();
+
+      return nombre.includes(searchLower) || descripcion.includes(searchLower);
+    });
+
+    console.log(
+      `Productos después del filtro case-insensitive: ${productos.length}`
+    );
+
+    // Aplicar límite después del filtrado
+    productos = productos.slice(0, limit);
+
     // Calcular relevancia: priorizar coincidencias en nombre
     productos = productos.map((producto) => {
-      const nombre = producto.nombre.toLowerCase();
+      const nombre = (producto.nombre || "").toLowerCase();
       const descripcion = (producto.descripcion || "").toLowerCase();
+      const searchLower = searchTerm.toLowerCase();
       let score = 0;
 
       // Puntuación por nombre (máxima prioridad)
-      if (nombre.includes(searchTerm)) {
+      if (nombre.includes(searchLower)) {
         score += 100;
-        if (nombre.startsWith(searchTerm)) {
+        if (nombre.startsWith(searchLower)) {
           score += 50; // Bonus si empieza con el término
         }
       }
 
       // Puntuación por descripción (menor prioridad)
-      if (descripcion.includes(searchTerm)) {
+      if (descripcion.includes(searchLower)) {
         score += 20;
       }
 
@@ -1438,11 +1453,11 @@ export async function buscarProductos(event, context) {
     return lambdaResponse(200, {
       productos,
       count: productos.length,
-      searchTerm,
+      searchTerm: q, // Devolver el término original, no en minúsculas
       pagination: {
         limit,
-        hasMore: !!result.LastEvaluatedKey,
-        nextKey,
+        hasMore: false, // Por ahora, sin paginación compleja
+        nextKey: null,
       },
     });
   } catch (error) {
