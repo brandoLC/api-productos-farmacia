@@ -1720,7 +1720,7 @@ export async function buscarPorSubcategoria(event, context) {
       debug: {
         subcategoria_extraida: subcategoria,
         parametros_path: event.pathParameters,
-        filtro_aplicado: `:subcategoria = ${subcategoria}`,
+        filtro_aplicado: `subcategoria = ${subcategoria}`,
       },
     });
   } catch (error) {
