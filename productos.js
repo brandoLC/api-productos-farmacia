@@ -1479,6 +1479,14 @@ export async function buscarProductos(event, context) {
 // Buscar productos por categoría exacta
 export async function buscarPorCategoria(event, context) {
   try {
+    // Debug: ver qué llega en el evento
+    console.log("=== DEBUG BUSCAR POR CATEGORÍA ===");
+    console.log("Event completo:", JSON.stringify(event, null, 2));
+    console.log("PathParameters:", event.pathParameters);
+    console.log("Path:", event.path);
+    console.log("Resource:", event.resource);
+    console.log("RequestPath:", event.requestPath);
+
     // Validar token
     const tokenValidation = validarToken(event);
     if (!tokenValidation.valid) {
@@ -1488,16 +1496,64 @@ export async function buscarPorCategoria(event, context) {
     const tenantId = tokenValidation.usuario.tenant_id;
     const queryParams = event.queryStringParameters || {};
 
-    // Obtener categoría del path
+    // Múltiples formas de obtener la categoría
     let categoria = null;
+
+    // Opción 1: Desde pathParameters (estándar)
     if (event.pathParameters && event.pathParameters.categoria) {
       categoria = decodeURIComponent(event.pathParameters.categoria);
     }
+
+    // Opción 2: Desde path si pathParameters no funciona
+    if (
+      !categoria &&
+      event.path &&
+      typeof event.path === "object" &&
+      event.path.categoria
+    ) {
+      categoria = decodeURIComponent(event.path.categoria);
+    }
+
+    // Opción 3: Desde resource path parsing
+    if (!categoria && event.resource) {
+      const matches = event.resource.match(/\/productos\/categoria\/([^\/]+)/);
+      if (matches && matches[1]) {
+        categoria = decodeURIComponent(matches[1]);
+      }
+    }
+
+    // Opción 4: Desde requestPath parsing
+    if (!categoria && event.requestPath) {
+      const matches = event.requestPath.match(
+        /\/productos\/categoria\/([^\/]+)/
+      );
+      if (matches && matches[1]) {
+        categoria = decodeURIComponent(matches[1]);
+      }
+    }
+
+    // Opción 5: Desde requestContext path
+    if (!categoria && event.requestContext && event.requestContext.path) {
+      const matches = event.requestContext.path.match(
+        /\/productos\/categoria\/([^\/]+)/
+      );
+      if (matches && matches[1]) {
+        categoria = decodeURIComponent(matches[1]);
+      }
+    }
+
+    console.log("Categoría extraída:", categoria);
 
     if (!categoria) {
       return lambdaResponse(400, {
         error: "Categoría requerida en el path",
         ejemplo: "/productos/categoria/Analgésicos",
+        debug: {
+          pathParameters: event.pathParameters,
+          path: event.path,
+          resource: event.resource,
+          requestPath: event.requestPath,
+        },
       });
     }
 
@@ -1559,6 +1615,11 @@ export async function buscarPorCategoria(event, context) {
 // Buscar productos por subcategoría exacta
 export async function buscarPorSubcategoria(event, context) {
   try {
+    // Debug: ver qué llega en el evento
+    console.log("=== DEBUG BUSCAR POR SUBCATEGORÍA ===");
+    console.log("Event completo:", JSON.stringify(event, null, 2));
+    console.log("PathParameters:", event.pathParameters);
+
     // Validar token
     const tokenValidation = validarToken(event);
     if (!tokenValidation.valid) {
@@ -1568,16 +1629,45 @@ export async function buscarPorSubcategoria(event, context) {
     const tenantId = tokenValidation.usuario.tenant_id;
     const queryParams = event.queryStringParameters || {};
 
-    // Obtener subcategoría del path
+    // Múltiples formas de obtener la subcategoría
     let subcategoria = null;
+
+    // Opción 1: Desde pathParameters (estándar)
     if (event.pathParameters && event.pathParameters.subcategoria) {
       subcategoria = decodeURIComponent(event.pathParameters.subcategoria);
     }
+
+    // Opción 2: Desde resource path parsing
+    if (!subcategoria && event.resource) {
+      const matches = event.resource.match(
+        /\/productos\/subcategoria\/([^\/]+)/
+      );
+      if (matches && matches[1]) {
+        subcategoria = decodeURIComponent(matches[1]);
+      }
+    }
+
+    // Opción 3: Desde requestPath parsing
+    if (!subcategoria && event.requestPath) {
+      const matches = event.requestPath.match(
+        /\/productos\/subcategoria\/([^\/]+)/
+      );
+      if (matches && matches[1]) {
+        subcategoria = decodeURIComponent(matches[1]);
+      }
+    }
+
+    console.log("Subcategoría extraída:", subcategoria);
 
     if (!subcategoria) {
       return lambdaResponse(400, {
         error: "Subcategoría requerida en el path",
         ejemplo: "/productos/subcategoria/Paracetamol",
+        debug: {
+          pathParameters: event.pathParameters,
+          resource: event.resource,
+          requestPath: event.requestPath,
+        },
       });
     }
 
