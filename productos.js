@@ -1623,6 +1623,8 @@ export async function buscarPorSubcategoria(event, context) {
     console.log("HttpMethod:", event.httpMethod);
     console.log("Resource:", event.resource);
     console.log("RequestPath:", event.requestPath);
+    console.log("Body:", event.body);
+    console.log("Body type:", typeof event.body);
 
     // Validar token
     const tokenValidation = validarToken(event);
@@ -1635,6 +1637,28 @@ export async function buscarPorSubcategoria(event, context) {
 
     // Múltiples formas de obtener la subcategoría
     let subcategoria = null;
+
+    // NUEVA OPCIÓN: Desde el body (para POST con JSON explícito)
+    if (event.body) {
+      try {
+        let body;
+        if (typeof event.body === "string") {
+          body = JSON.parse(event.body);
+        } else {
+          body = event.body;
+        }
+
+        if (body && body.subcategoria) {
+          subcategoria = body.subcategoria.trim();
+          console.log("Subcategoría extraída desde BODY:", subcategoria);
+        }
+      } catch (error) {
+        console.log(
+          "Error parseando body JSON, continuando con path params:",
+          error.message
+        );
+      }
+    }
 
     // Opción 1: Desde pathParameters (estándar)
     if (event.pathParameters && event.pathParameters.subcategoria) {
